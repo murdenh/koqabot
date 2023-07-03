@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="utf-8">
+  <title>단답봇</title>
+  <meta name="description" content="Polyglot-based Q&A chatbot on edge">
+    <!-- Use Bootswatch CSS from cdn -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootswatch/3.3.7/cerulean/bootstrap.min.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="row">
+          <h2 class="text-center">단답형 지식봇</h2>
+          <h5 id="caution" class="text-center">
+              해당 봇은 약 4~5GB의 RAM 메모리를 필요로 합니다.
+              <br/>메모리가 부족할 경우 기타 프로그램을 종료하고 다운로드 버튼을 눌러주세요.
+          </h5>
+        </div>
+
+        <div class="row">
+            <div class="col-md-12 col-lg-12">
+                <label id='bot-name' class="control-label">단답봇(1.3G)</label>
+                <span class="input-group-btn">
+                  <button id="download-button" class="btn btn-success">다운로드</button>
+                </span>
+                <div class="progress" style="display:none">
+                  <div id='pbar' class="progress-bar progress-bar-striped bg-info" role="progressbar" style="width: 0%"></div>
+                </div>
+                <div id="messages-container" style="height: 200px; overflow-y: scroll; border:1px solid black;">
+                    <div class="list-group" id="messages"></div>
+                </div>
+                <div id="chat"> 
+                        <div class="form-group">
+                            <div class="input-group">
+                                <input id="message" type="text" class="form-control" name="message"  placeholder="질문을 작성하세요..." disabled>
+                                <span class="input-group-btn">
+                                    <button id="send-message" class="btn btn-success" disabled>확인</button>
+                                </span>
+                            </div>
+                        </div>
+                </div>
+                <div class="progress" style="display:none">
+                  <div id='bot-gen' class="progress-bar progress-bar-striped bg-info" role="progressbar" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- <script src="script.min.js"></script> -->
+    <script type="module" charset="utf-8">
+
+      import { AutoModelForCausalLM, AutoTokenizer, Tensor } from './lib.js';
+      let model_id = 'Murden/polyglot-ko-qabot';
+      let tokenizer = await AutoTokenizer.from_pretrained(model_id);
+      BigInt.prototype.toJSON = function() { return this.toString() }
+
+
+      function handleMessage(data) {
+        var orientation = "text-left";
+
+        if(data.from == "나"){
+            orientation = "text-right"
+        }
+
+        var messageHTML =  '<a href="javascript:void(0);" class="list-group-item' + orientation + '">';
+                messageHTML += '<h4 class="list-group-item-heading">'+ data.from +'</h4>';
+                messageHTML += '<p class="list-group-item-text">'+ data.text +'</p>';
+            messageHTML += '</a>';
+
+        document.getElementById("messages").innerHTML += messageHTML;
+        document.getElementById("messages-container").scrollTop = 9999
+      } 
+
+      
+      var pbar = document.getElementById('pbar');
+      function downloadCallback(data) {
+        // console.log(data)
+        if (data.file.endsWith('onnx')) {
+          if (data.status == 'progress') {
+            pbar.style.width = data.progress.toFixed(2) + '%';
+            pbar.textConent = '로딩중...';
+          } else if (data.status == 'done') {
+            pbar.parentElement.remove();
+            document.getElementById('bot-name').remove();
+            document.getElementById('message').disabled = false;
+            document.getElementById('send-message').disabled = false;
+
+            handleMessage({
+              from: "단답봇",
+              text: "안녕하세요, 저는 지식을 요구하는 간단한 질문에 대하여 간략히 대답할 수 있습니다. 각 대답에 요구되는 시간은 컴퓨터 성능 및 대답 길이에 따라 1~10분 정도 소요됩니다. 무엇이 궁금하신가요?"
+            });
+          }
+        }
+      }
+
+
+      var gbar = document.getElementById('bot-gen')
+      function generateCallback(outputs){
+        let output = outputs[0] 
+
+        let numToken = output.output_token_ids.length;
+        let maxNumToken = (max_length - inp_leng);
+        gbar.style.width = ((numToken / maxNumToken)*100).toFixed(2) + '%';
+        gbar.textContent = `생각중... (${numToken} / ${maxNumToken})`;
+      }
+
+
+      var model;
+      var dl = document.getElementById("download-button");
+      dl.addEventListener("click", function(){
+        dl.style.display = 'none';
+        if (pbar.parentElement.style.display == 'none') {
+          pbar.parentElement.style.display = 'block';
+        }
+
+        if (!model){
+          AutoModelForCausalLM.from_pretrained(model_id, {progress_callback: downloadCallback}).then(
+            (mdl) => {
+              model = mdl;
+            }
+          );
+        }
+      }, false);
+
+
+      var max_length = 80;
+      var inp_leng;
+      var inp_container = new BigInt64Array(max_length);
+      var attn_container = new BigInt64Array(max_length);
+
+      var msgElem = document.getElementById("message");
+      var inputBtnElem = document.getElementById("send-message");
+      inputBtnElem.addEventListener("click", function(){
+        // Get the text to send
+        if (!msgElem.disabled) {
+          var text = msgElem.value;
+          
+          if (text){
+            handleMessage({
+              from: "나",
+              text: text
+            });
+
+            if (text.length > 30) {
+              handleMessage({
+                from: "단답봇",
+                text: "죄송합니다. 간단한 질문이 아닌 것 같습니다. 더 간략하게 질문해주실 수 있나요?"
+              })
+            } else {
+
+              msgElem.value = "";
+              msgElem.disabled = true;
+              inputBtnElem.disabled = true;
+              gbar.parentElement.style.display = 'block';
+              gbar.style.width = '0%';
+              gbar.textContent = `생각중....`;
+
+
+              let prompt = `아래의 질문에 대한 대답을 적절히 작성하세요.\n\n## 질문:\n${text}\n\n## 대답:\n`;
+              setTimeout(async () => generateAnswer(prompt), 100);
+            }
+
+          }
+        }
+      }, false);
+
+      async function generateAnswer(prompt) {
+        let {input_ids, attention_mask} = await tokenizer(prompt);
+
+        inp_leng = input_ids.data.length;
+        inp_container.fill(0n);
+        attn_container.fill(0n);
+        inp_container.set(input_ids.data, 0);
+        attn_container.set(attention_mask.data, 0);
+        
+        let inp_ids = new Tensor('int64', inp_container, [1, inp_container.length]);
+        let attn_mask = new Tensor('int64', attn_container, [1, attn_container.length]);
+        let gen_config = {max_length: max_length-inp_leng, callback_function: generateCallback};
+
+
+        let outputs = await model.generate(inp_ids, inp_leng, gen_config, null, {inputs_attention_mask: attn_mask});
+        let decoded = await tokenizer.decode(outputs[0], { skip_special_tokens: true });
+
+        // console.log(decoded);
+        handleMessage({
+          from: "단답봇",
+          text: decoded
+        });
+
+        msgElem.value = "";
+        msgElem.disabled = false;
+        inputBtnElem.disabled = false;
+        gbar.parentElement.style.display = 'none';
+        gbar.style.width = '0%';
+        gbar.textContent = '';
+      }
+
+    </script>
+</body>
+
+</html>
